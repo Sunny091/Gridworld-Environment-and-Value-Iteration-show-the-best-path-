@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Gridworld Visualization</title>
+        <link
+            rel="stylesheet"
+            href="{{ url_for('static', filename='styles.css') }}"
+        />
+    </head>
+    <body>
+        <div class="header">Gridworld Visualization</div>
+
+        <!-- Navigation -->
+        <div class="nav-bar">
+            <button id="introBtn" onclick="switchSection('introduction')">
+                Introduction
+            </button>
+            <button id="demoBtn" onclick="switchSection('demo')">Demo</button>
+        </div>
+
+        <!-- Introduction Section -->
+        <div id="introduction" class="section">
+            <div class="intro-content">
+                <h2 id="introTitle">
+                    🔍 Introduction to Gridworld & Value Iteration
+                </h2>
+                <p>
+                    The <strong>Gridworld Environment</strong> is a simplified
+                    RL environment where an agent learns to reach a goal.
+                </p>
+                <p>
+                    <strong>Value Iteration</strong> calculates the best path by
+                    updating state values iteratively.
+                </p>
+                <h3>📌 How to Use the Demo:</h3>
+                <ul>
+                    <li>Choose a grid size (5x5 to 9x9).</li>
+                    <li>
+                        Click to place a <strong>Start (🟩)</strong>,
+                        <strong>Goal (🟥)</strong>, and up to
+                        <strong>n-2 Obstacles (⬛)</strong>.
+                    </li>
+                    <li>
+                        Click "Compute Value Evaluation" to see how the agent
+                        learns!
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Demo Section -->
+        <div id="demo" class="section">
+            <h2 id="demoTitle">🔧 Gridworld Demo</h2>
+            <label for="size">Grid Size (5-9):</label>
+            <input type="number" id="size" min="5" max="9" value="5" />
+            <button onclick="generateGrid()">Generate Grid</button>
+            <div id="gridContainer" class="grid"></div>
+            <button onclick="evaluateValues()">Compute Value Evaluation</button>
+
+            <div id="resultsSection" class="results">
+                <div class="grid-container">
+                    <div class="grid-box">
+                        <h2>Path Animation</h2>
+                        <div id="pathGrid" class="grid"></div>
+                    </div>
+                    <div class="grid-box">
+                        <h2>Policy Arrows</h2>
+                        <div id="policyGrid" class="grid"></div>
+                    </div>
+                    <div class="grid-box">
+                        <h2>Value (V)</h2>
+                        <div id="valueGrid" class="grid"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            let gridSize = 5;
+            let gridData = [];
+            let obstacleCount = 0;
+            let maxObstacles = 3;
+
+            function switchSection(section) {
+                document
+                    .querySelectorAll(".section")
+                    .forEach((sec) => sec.classList.remove("active"));
+                document.getElementById(section).classList.add("active");
+
+                document
+                    .getElementById("introBtn")
+                    .classList.remove("active-tab");
+                document
+                    .getElementById("demoBtn")
+                    .classList.remove("active-tab");
+                document
+                    .getElementById("introTitle")
+                    .classList.remove("active-title");
+                document
+                    .getElementById("demoTitle")
+                    .classList.remove("active-title");
+
+                if (section === "introduction") {
+                    document
+                        .getElementById("introBtn")
+                        .classList.add("active-tab");
+                    document
+                        .getElementById("introTitle")
+                        .classList.add("active-title");
+                } else {
+                    document
+                        .getElementById("demoBtn")
+                        .classList.add("active-tab");
+                    document
+                        .getElementById("demoTitle")
+                        .classList.add("active-title");
+                }
+            }
+
+            // Set initial state
+            window.onload = () => {
+                switchSection("introduction");
+            };
+
+            function generateGrid() {
+                gridSize = parseInt(document.getElementById("size").value);
+                maxObstacles = gridSize - 2;
+                obstacleCount = 0;
+                gridData = Array.from({ length: gridSize }, () =>
+                    Array(gridSize).fill("empty")
+                );
+
+                const gridContainer = document.getElementById("gridContainer");
+                gridContainer.innerHTML = "";
+                gridContainer.style.gridTemplateColumns = `repeat(${gridSize}, 50px)`;
+
+                for (let i = 0; i < gridSize; i++) {
+                    for (let j = 0; j < gridSize; j++) {
+                        let cell = document.createElement("div");
+                        cell.classList.add("cell");
+                        cell.dataset.row = i;
+                        cell.dataset.col = j;
+                        cell.onclick = () => cellClicked(i, j, cell);
+                        gridContainer.appendChild(cell);
+                    }
+                }
+                document.getElementById("resultsSection").style.display =
+                    "none";
+            }
+
+            function cellClicked(row, col, cell) {
+                if (gridData[row][col] === "empty") {
+                    if (!gridData.flat().includes("start")) {
+                        cell.classList.add("start");
+                        gridData[row][col] = "start";
+                    } else if (!gridData.flat().includes("goal")) {
+                        cell.classList.add("goal");
+                        gridData[row][col] = "goal";
+                    } else if (obstacleCount < maxObstacles) {
+                        cell.classList.add("obstacle");
+                        gridData[row][col] = "obstacle";
+                        obstacleCount++;
+                    }
+                }
+            }
+
+            function evaluateValues() {
+                fetch("/evaluate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ grid: gridData, size: gridSize }),
+                })
+                    .then((response) => response.json())
+                    .then((data) => {
+                        drawGrid("policyGrid", data.policy);
+                        drawGrid("valueGrid", data.values, true);
+                        animateTraces(data.traces);
+                        document.getElementById(
+                            "resultsSection"
+                        ).style.display = "block";
+                    });
+            }
+
+            function drawGrid(gridId, data, isValue = false) {
+                const container = document.getElementById(gridId);
+                container.innerHTML = "";
+                container.style.gridTemplateColumns = `repeat(${gridSize}, 50px)`;
+
+                for (let i = 0; i < gridSize; i++) {
+                    for (let j = 0; j < gridSize; j++) {
+                        let cell = document.createElement("div");
+                        cell.classList.add("cell");
+                        if (gridData[i][j] === "start")
+                            cell.classList.add("start");
+                        if (gridData[i][j] === "goal")
+                            cell.classList.add("goal");
+                        if (gridData[i][j] === "obstacle")
+                            cell.classList.add("obstacle");
+
+                        if (gridData[i][j] === "empty") {
+                            let text = document.createElement("div");
+                            text.innerText = isValue
+                                ? data[i][j].toFixed(2)
+                                : getArrowSymbol(data[i][j]);
+                            cell.appendChild(text);
+                        }
+                        container.appendChild(cell);
+                    }
+                }
+            }
+
+            function animateTraces(traces) {
+                const pathGrid = document.getElementById("pathGrid");
+                pathGrid.innerHTML = "";
+                pathGrid.style.gridTemplateColumns = `repeat(${gridSize}, 50px)`;
+
+                let iteration = 0;
+
+                function showIteration() {
+                    if (iteration >= traces.length) return;
+
+                    drawGrid("pathGrid", gridData);
+                    const trace = traces[iteration];
+                    let step = 0;
+
+                    const interval = setInterval(() => {
+                        document
+                            .querySelectorAll("#pathGrid .cell")
+                            .forEach((cell) => {
+                                cell.classList.remove("current");
+                            });
+
+                        if (step >= trace.length) {
+                            clearInterval(interval);
+                            iteration++;
+                            setTimeout(showIteration, 400);
+                            return;
+                        }
+
+                        const [row, col] = trace[step];
+                        const index = row * gridSize + col + 1;
+                        const cell = document.querySelector(
+                            `#pathGrid .cell:nth-child(${index})`
+                        );
+                        if (cell) cell.classList.add("current");
+                        step++;
+                    }, 120);
+                }
+
+                showIteration();
+            }
+
+            function getArrowSymbol(action) {
+                return (
+                    { up: "↑", down: "↓", left: "←", right: "→" }[action] || ""
+                );
+            }
+        </script>
+    </body>
+</html>
